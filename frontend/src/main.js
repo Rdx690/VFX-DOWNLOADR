@@ -4,87 +4,168 @@ const API = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const app = document.querySelector('#app');
 
 app.innerHTML = `
-  <div class="ambient a1"></div><div class="ambient a2"></div>
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand" href="#"><span class="brandmark">V</span><span><b>VFX DOWNLOADER</b><small>POWERED BY SOURAJIT VFX</small></span></a>
-      <span class="top-pill"><i></i> MEDIA TOOLKIT</span>
+  <div class="app-shell">
+    <header class="brand">
+      <div class="brand-mark">V</div>
+      <h1>VFX DOWNLOADER</h1>
+      <p>by Sourajit VFX · neon glass edition</p>
     </header>
-    <main>
-      <div class="eyebrow">✦ CREATOR MEDIA WORKSPACE</div>
-      <h1>Your media.<br><span>Your format. Your choice.</span></h1>
-      <p class="intro">Prepare MP4 video or MP3 audio from supported public YouTube videos, Instagram Reels and Facebook videos you own or have permission to save. Choose the best available quality, up to 4K where available.</p>
-      <section class="panel">
-        <form id="downloadForm">
-          <label for="url">VIDEO URL</label>
-          <div class="urlrow">
-            <input id="url" type="url" placeholder="Paste a YouTube, Instagram or Facebook video link…" required autocomplete="url" />
-            <button id="submit" type="submit">Continue <span>↗</span></button>
-          </div>
-          <div class="options">
-            <div class="option"><label for="format">FORMAT</label><select id="format"><option value="mp4">MP4 · Video</option><option value="mp3">MP3 · Audio</option></select></div>
-            <div class="option" id="qualityWrap"><label for="quality">VIDEO QUALITY</label><select id="quality"><option value="best">Best available · up to 4K</option><option value="2160">2160p · 4K</option><option value="1440">1440p · 2K</option><option value="1080">1080p · Full HD</option><option value="720">720p · HD</option></select></div>
-          </div>
-          <label class="consent"><input id="consent" type="checkbox" required /><span>I own this content or have permission to download it, and will respect the platform's terms and copyright.</span></label>
-        </form>
-        <div id="status" class="status" role="status" aria-live="polite"></div>
-        <div id="result" class="result"></div>
-      </section>
-      <div class="feature-grid">
-        <article><span>▣</span><b>YouTube + Instagram + Facebook</b><p>Supported public video links from all three platforms.</p></article>
-        <article><span>♫</span><b>MP4 + MP3</b><p>Choose video or audio output.</p></article>
-        <article><span>✧</span><b>Up to 4K</b><p>Quality depends on the source and available formats.</p></article>
-        <article><span>⌁</span><b>Responsive design</b><p>Designed for mobile, tablet and desktop.</p></article>
+
+    <main class="glass-card">
+      <div class="segmented" role="tablist" aria-label="Choose a platform">
+        <button class="active" type="button" data-tab="youtube" role="tab" aria-selected="true">YouTube</button>
+        <button type="button" data-tab="instagram" role="tab" aria-selected="false">Instagram</button>
+        <button type="button" data-tab="facebook" role="tab" aria-selected="false">Facebook</button>
       </div>
-      <aside class="notice"><b>Important:</b> Use only content you own or are authorized to download. Private/login-restricted posts and DRM-protected media are not supported. This tool does not bypass privacy or platform protections. Respect YouTube, Instagram and Facebook terms and copyright rules. Instagram or Facebook extraction can fail when login is required or their public endpoints change.</aside>
+
+      <form id="downloadForm">
+        <div class="input-row">
+          <div class="input-wrap">
+            <input id="urlInput" type="url" placeholder="Paste a public YouTube video URL…" spellcheck="false" autocomplete="url" required>
+          </div>
+          <button id="fetchBtn" class="neon-btn" type="submit">Download</button>
+        </div>
+
+        <div class="options">
+          <div class="option">
+            <label for="formatSelect">FORMAT</label>
+            <select id="formatSelect">
+              <option value="mp4">MP4 · Video</option>
+              <option value="mp3">MP3 · Audio</option>
+            </select>
+          </div>
+          <div class="option" id="qualityWrap">
+            <label for="qualitySelect">VIDEO QUALITY</label>
+            <select id="qualitySelect">
+              <option value="best">Best available · up to 4K</option>
+              <option value="2160">2160p · 4K</option>
+              <option value="1440">1440p · 2K</option>
+              <option value="1080">1080p · Full HD</option>
+              <option value="720">720p · HD</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="consent">
+          <input id="consentCheck" type="checkbox" required>
+          <span>I own this content or have permission to download it, and will respect the platform's terms and copyright.</span>
+        </label>
+      </form>
+
+      <div class="status-area" role="status" aria-live="polite">
+        <div id="statusText" class="status-text">Ready when you are.</div>
+        <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+      </div>
+      <div id="result" class="result"></div>
     </main>
-    <footer><b>VFX DOWNLOADER</b> <span>·</span> Crafted by SOURAJIT VFX <span>·</span> Independent project</footer>
+
+    <section class="feature-grid" aria-label="Features">
+      <article><span>▣</span><b>Three platforms</b><p>YouTube, Instagram and Facebook public video links.</p></article>
+      <article><span>♫</span><b>MP4 + MP3</b><p>Choose video or audio output.</p></article>
+      <article><span>✧</span><b>Up to 4K</b><p>Quality depends on the source and available formats.</p></article>
+    </section>
+
+    <p class="footnote">Only for media you own or are authorized to download. Private/login-restricted posts and DRM-protected media are not supported. Respect platform terms and copyright rules.</p>
+    <footer>VFX DOWNLOADER · Crafted by SOURAJIT VFX</footer>
   </div>
 `;
 
 const form = document.querySelector('#downloadForm');
-const format = document.querySelector('#format');
+const urlInput = document.querySelector('#urlInput');
+const fetchBtn = document.querySelector('#fetchBtn');
+const formatSelect = document.querySelector('#formatSelect');
 const qualityWrap = document.querySelector('#qualityWrap');
-const statusBox = document.querySelector('#status');
+const qualitySelect = document.querySelector('#qualitySelect');
+const statusText = document.querySelector('#statusText');
+const progressFill = document.querySelector('#progressFill');
+const consentCheck = document.querySelector('#consentCheck');
 const result = document.querySelector('#result');
-const submit = document.querySelector('#submit');
 
-format.addEventListener('change', () => {
-  qualityWrap.hidden = format.value === 'mp3';
+let activePlatform = 'youtube';
+const placeholders = {
+  youtube: 'Paste a public YouTube video URL…',
+  instagram: 'Paste a public Instagram Reel or video URL…',
+  facebook: 'Paste a public Facebook video URL…'
+};
+
+document.querySelectorAll('[data-tab]').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    activePlatform = tab.dataset.tab;
+    document.querySelectorAll('[data-tab]').forEach((item) => {
+      const selected = item === tab;
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-selected', String(selected));
+    });
+    urlInput.placeholder = placeholders[activePlatform];
+    urlInput.value = '';
+    result.replaceChildren();
+    setStatus('Ready when you are.', 'idle');
+  });
 });
 
-function status(message, type = 'info') {
-  statusBox.className = `status visible ${type}`;
-  statusBox.textContent = message;
+formatSelect.addEventListener('change', () => {
+  qualityWrap.hidden = formatSelect.value === 'mp3';
+});
+
+function setStatus(message, state = 'idle') {
+  statusText.textContent = message;
+  statusText.className = `status-text ${state}`;
+  progressFill.className = 'progress-fill';
+  if (state === 'loading') progressFill.classList.add('indeterminate');
+  if (state === 'success') progressFill.style.width = '100%';
+  else progressFill.style.width = '0%';
+}
+
+function isMatchingPlatform(rawUrl, platform) {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+    if (platform === 'youtube') return ['youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com'].includes(host);
+    if (platform === 'instagram') return host === 'instagram.com' || host.endsWith('.instagram.com');
+    if (platform === 'facebook') return host === 'facebook.com' || host.endsWith('.facebook.com') || host === 'fb.watch';
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   result.replaceChildren();
+
   if (!API) {
-    status('Backend is not configured yet. Set VITE_API_BASE_URL in Vercel to your deployed Render API URL.', 'error');
+    setStatus('Backend is not configured. Add VITE_API_BASE_URL in Vercel using your deployed API URL.', 'error');
     return;
   }
-  if (!document.querySelector('#consent').checked) {
-    status('Please confirm you have the rights to download this content.', 'error');
+
+  const url = urlInput.value.trim();
+  if (!isMatchingPlatform(url, activePlatform)) {
+    setStatus(`That link does not look like a supported ${activePlatform} URL. Check the selected platform and try again.`, 'error');
     return;
   }
-  const url = document.querySelector('#url').value.trim();
-  const selectedFormat = format.value;
-  const quality = document.querySelector('#quality').value;
-  submit.disabled = true;
-  submit.innerHTML = '<span class="spinner"></span> Preparing…';
-  status('Checking the URL and preparing your file. Large or 4K files can take a while.', 'info');
+
+  if (!consentCheck.checked) {
+    setStatus('Please confirm that you own this content or have permission to download it.', 'error');
+    return;
+  }
+
+  const selectedFormat = formatSelect.value;
+  const quality = qualitySelect.value;
+  fetchBtn.disabled = true;
+  fetchBtn.textContent = 'Preparing…';
+  setStatus('Checking the link and preparing your file. Large or 4K downloads can take a while.', 'loading');
+
   try {
     const response = await fetch(`${API}/api/download`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url, format: selectedFormat, quality})
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, format: selectedFormat, quality })
     });
+
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || `Request failed (${response.status})`);
+      throw new Error(data.error || `Download request failed (${response.status}).`);
     }
+
     const blob = await response.blob();
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="?([^";]+)"?/i);
@@ -96,12 +177,12 @@ form.addEventListener('submit', async (event) => {
     document.body.append(link);
     link.click();
     link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-    status('Your file is ready. Check your device downloads.', 'success');
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    setStatus('Your file is ready. Check your device downloads.', 'success');
   } catch (error) {
-    status(error.message || 'Could not prepare this media. Try again later.', 'error');
+    setStatus(error.message || 'Could not prepare this media. Please try again later.', 'error');
   } finally {
-    submit.disabled = false;
-    submit.innerHTML = 'Continue <span>↗</span>';
+    fetchBtn.disabled = false;
+    fetchBtn.textContent = 'Download';
   }
 });
