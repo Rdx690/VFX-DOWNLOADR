@@ -1,0 +1,9 @@
+{
+  "name": "vfx-downloader",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {"dev": "vite --host 0.0.0.0", "build": "vite build", "preview": "vite preview"},
+  "dependencies": {"lucide": "^0.468.0"},
+  "devDependencies": {"vite": "^6.0.0"}
+}
