@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vfx-downloader-api
+    runtime: python
+    rootDir: backend
+    buildCommand: "bash build.sh"
+    startCommand: "gunicorn --workers 1 --threads 4 --timeout 600 app:app"
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FRONTEND_ORIGIN
+        sync: false
