@@ -54,6 +54,49 @@ def schedule_cleanup(temp_dir, job_id):
     threading.Thread(target=remove_later, daemon=True).start()
 
 
+def has_audio_stream(file_path):
+    """Return True only when ffprobe confirms an audio stream exists."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "a:0",
+                "-show_entries", "stream=codec_type", "-of", "default=noprint_wrappers=1:nokey=1",
+                str(file_path),
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0 and "audio" in result.stdout.lower()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        raise RuntimeError("FFprobe/FFmpeg is missing. Install ffmpeg in the backend runtime.")
+
+
+def download_muxed_fallback(url, temp_dir, source):
+    """Fallback to a single audio+video format when separate streams cannot be merged."""
+    fallback_dir = Path(temp_dir) / "muxed_fallback"
+    fallback_dir.mkdir(exist_ok=True)
+    opts = {
+        "format": "best[height<=2160]/best",
+        "outtmpl": str(fallback_dir / "%(title).80s_%(id)s.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "restrictfilenames": True,
+        "socket_timeout": 30,
+        "retries": 3,
+        "extractor_retries": 2,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.extract_info(url, download=True)
+    files = [
+        p for p in fallback_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}
+    ]
+    files = [p for p in files if has_audio_stream(p)]
+    if not files:
+        raise RuntimeError(f"{source} did not provide a downloadable video with an audio track.")
+    return max(files, key=lambda p: p.stat().st_size)
+
+
 def resolve_instagram_video(url, temp_dir, media_format):
     """Resolve public Instagram video posts using the project's earlier Instaloader approach."""
     match = SHORTCODE_RE.search(urlparse(url).path)
@@ -130,10 +173,10 @@ def resolve_youtube_facebook(url, source, temp_dir, media_format, quality):
         }
     else:
         if quality == "best":
-            fmt = "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"
+            fmt = "bestvideo*[height<=2160]+bestaudio/best*[height<=2160]/best*"
         else:
             h = int(quality)
-            fmt = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best[height<={h}]"
+            fmt = f"bestvideo*[height<={h}]+bestaudio/best*[height<={h}]/best*[height<={h}]"
         opts = {
             "format": fmt,
             "merge_output_format": "mp4",
