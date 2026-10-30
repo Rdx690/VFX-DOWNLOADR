@@ -97,22 +97,49 @@ def download_muxed_fallback(url, temp_dir, source):
     return max(files, key=lambda p: p.stat().st_size)
 
 
+def require_ffmpeg():
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        raise RuntimeError("FFmpeg and FFprobe are required but are missing from the Render runtime.")
+    return ffmpeg, ffprobe
+
+
+def has_audio_stream(file_path):
+    _, ffprobe = require_ffmpeg()
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(file_path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    return result.returncode == 0 and "audio" in result.stdout.lower()
+
+
+def convert_to_mp3(source_path, output_path):
+    ffmpeg, _ = require_ffmpeg()
+    result = subprocess.run(
+        [ffmpeg, "-y", "-i", str(source_path), "-map", "0:a:0", "-vn",
+         "-codec:a", "libmp3lame", "-b:a", "192k", str(output_path)],
+        capture_output=True, text=True, timeout=240,
+    )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size < 1024:
+        detail = (result.stderr or result.stdout or "Unknown FFmpeg error")[-1200:]
+        raise RuntimeError("MP3 conversion failed: " + detail)
+    return output_path
+
+
 def resolve_instagram_video(url, temp_dir, media_format):
-    """Resolve public Instagram video posts using the project's earlier Instaloader approach."""
+    """Download a public Instagram video and preserve its original audio."""
+    require_ffmpeg()
     match = SHORTCODE_RE.search(urlparse(url).path)
     if not match:
         raise RuntimeError("Paste a valid Instagram Reel or video post URL.")
 
     loader = instaloader.Instaloader(
-        quiet=True,
-        download_pictures=False,
-        download_videos=False,
-        download_video_thumbnails=False,
-        save_metadata=False,
-        download_comments=False,
+        quiet=True, download_pictures=False, download_videos=False,
+        download_video_thumbnails=False, save_metadata=False, download_comments=False,
     )
     post = instaloader.Post.from_shortcode(loader.context, match.group(1))
-
     video_url = None
     if post.typename == "GraphSidecar":
         for node in post.get_sidecar_nodes():
@@ -125,84 +152,107 @@ def resolve_instagram_video(url, temp_dir, media_format):
     if not video_url:
         raise RuntimeError("No public video was found. This may be an image-only, private, or unavailable post.")
 
-    output = Path(temp_dir) / "instagram_video.mp4"
+    output = Path(temp_dir) / "instagram_source.mp4"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36",
         "Referer": "https://www.instagram.com/",
     }
     with requests.get(video_url, headers=headers, stream=True, timeout=(20, 120)) as response:
         response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "").lower()
-        if "video" not in content_type and "octet-stream" not in content_type:
-            raise RuntimeError("Instagram did not return a video file. Please resolve the Reel again later.")
         with output.open("wb") as file:
             for chunk in response.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     file.write(chunk)
-
     if output.stat().st_size < 1024:
-        raise RuntimeError("The video download was incomplete. Please try again.")
+        raise RuntimeError("Instagram video download was incomplete.")
+    if not has_audio_stream(output):
+        raise RuntimeError("Instagram returned a video without an audio stream; refusing to send a silent MP4.")
 
+    title = (post.caption or "instagram-video").strip()[:100]
     if media_format == "mp3":
-        audio_output = Path(temp_dir) / "instagram_audio.mp3"
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(output), "-vn", "-b:a", "192k", str(audio_output)],
-            capture_output=True, text=True, timeout=180,
-        )
-        if result.returncode != 0 or not audio_output.exists():
-            raise RuntimeError("MP3 conversion failed. Check that FFmpeg is installed on the backend.")
-        return audio_output, (post.caption or "instagram-video").strip()[:100]
-
-    return output, (post.caption or "instagram-video").strip()[:100]
+        return convert_to_mp3(output, Path(temp_dir) / "instagram_audio.mp3"), title
+    return output, title
 
 
 def resolve_youtube_facebook(url, source, temp_dir, media_format, quality):
+    ffmpeg, _ = require_ffmpeg()
     template = str(Path(temp_dir) / "%(title).80s_%(id)s.%(ext)s")
+    common = {
+        "outtmpl": template,
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": False,
+        "restrictfilenames": True,
+        "socket_timeout": 45,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_retries": 3,
+        "ffmpeg_location": ffmpeg,
+    }
     if media_format == "mp3":
         opts = {
+            **common,
             "format": "bestaudio/best",
-            "outtmpl": template,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "restrictfilenames": True,
-            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
-            "socket_timeout": 30,
-            "retries": 3,
-            "extractor_retries": 2,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
         }
     else:
         if quality == "best":
-            fmt = "bestvideo*[height<=2160]+bestaudio/best*[height<=2160]/best*"
+            fmt = "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"
         else:
             h = int(quality)
-            fmt = f"bestvideo*[height<={h}]+bestaudio/best*[height<={h}]/best*[height<={h}]"
+            fmt = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best[height<={h}]"
         opts = {
+            **common,
             "format": fmt,
             "merge_output_format": "mp4",
-            "outtmpl": template,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "restrictfilenames": True,
-            "socket_timeout": 30,
-            "retries": 3,
-            "extractor_retries": 2,
         }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        title = info.get("title") or f"{source}-video"
+        title = info.get("title") or f"{source}-media"
 
-    candidates = [p for p in Path(temp_dir).iterdir() if p.is_file()]
+    files = [p for p in Path(temp_dir).iterdir() if p.is_file() and p.stat().st_size > 1024]
+    if media_format == "mp3":
+        candidates = [p for p in files if p.suffix.lower() == ".mp3"]
+        if not candidates:
+            raise RuntimeError("yt-dlp finished but no MP3 output was created. Check FFmpeg post-processing.")
+        result = max(candidates, key=lambda p: p.stat().st_size)
+        return result, title
+
+    candidates = [p for p in files if p.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}]
+    candidates = [p for p in candidates if has_audio_stream(p)]
     if not candidates:
-        raise RuntimeError("The media file was not created. The source may not offer this format.")
-    return max(candidates, key=lambda p: p.stat().st_size), title
+        raise RuntimeError("No downloaded video containing an audio stream was found. The source may be restricted or FFmpeg merge may have failed.")
+    result = max(candidates, key=lambda p: p.stat().st_size)
 
+    # Normalize the container to MP4 while explicitly mapping both streams.
+    normalized = Path(temp_dir) / "vfx_video_with_audio.mp4"
+    remux = subprocess.run(
+        [ffmpeg, "-y", "-i", str(result), "-map", "0:v:0", "-map", "0:a:0",
+         "-c", "copy", "-movflags", "+faststart", str(normalized)],
+        capture_output=True, text=True, timeout=180,
+    )
+    if remux.returncode == 0 and normalized.exists() and has_audio_stream(normalized):
+        result = normalized
+    elif not has_audio_stream(result):
+        detail = (remux.stderr or remux.stdout or "Audio stream missing")[-1000:]
+        raise RuntimeError("Could not create an MP4 with audio: " + detail)
+    return result, title
 
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "service": "VFX DOWNLOADER API", "instagram": "Instaloader", "youtube_facebook": "yt-dlp"})
+    return jsonify({
+        "ok": True,
+        "service": "VFX DOWNLOADER API",
+        "instagram": "Instaloader",
+        "youtube_facebook": "yt-dlp",
+        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "ffprobe": bool(shutil.which("ffprobe")),
+    })
 
 
 @app.post("/api/download")
