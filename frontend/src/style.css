@@ -224,3 +224,28 @@ footer { margin-top: 28px; color: rgba(255,255,255,.38); font-size: 10px; letter
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+
+/* Minimal fast downloader layout */
+.glass-card { max-width: 620px; }
+#downloadForm { display: grid; gap: 16px; }
+.input-wrap { width: 100%; }
+.input-wrap input { min-height: 60px; }
+.simple-options { display: grid; gap: 8px; }
+.simple-options label { color: #d9d1e7; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.simple-options select {
+  width: 100%; min-height: 52px; padding: 13px 14px; color: white;
+  background: rgba(10,8,20,.85); border: 1px solid rgba(255,255,255,.18);
+  border-radius: 14px; font: inherit; outline: none;
+}
+.simple-options select:focus { border-color: var(--neon-cyan); }
+#fetchBtn { width: 100%; min-height: 58px; }
+.status-area { margin-top: 18px; }
+.app-shell { justify-content: center; }
+.brand { margin-bottom: 26px; }
+footer { margin-top: 22px; }
+@media (max-width: 600px) {
+  .app-shell { padding: 28px 14px 24px; }
+  .glass-card { padding: 20px; border-radius: 22px; }
+  .input-wrap input { min-height: 56px; font-size: .92rem; }
+}
